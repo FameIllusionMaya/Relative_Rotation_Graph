@@ -37,20 +37,23 @@ def compute_rrg(sector_close: pd.Series,
                 mom_period: int = RS_MOMENTUM_PERIOD) -> pd.DataFrame:
     """
     Compute RS-Ratio and RS-Momentum for a single sector.
-
-    RS-Ratio   = 100 + normalised(RS / SMA(RS, rs_period))
-    RS-Momentum = 100 + normalised(RS-Ratio / SMA(RS-Ratio, mom_period))
+    
+    **สูตร RRG ดั้งเดิม (Original RRG Formula):**
+    RS-Ratio    = (RS / SMA(RS, rs_period)) × 100
+    RS-Momentum = (RS-Ratio / SMA(RS-Ratio, mom_period)) × 100
     """
     # Raw relative strength
     rs = sector_close / benchmark_close
 
-    # RS-Ratio: ratio vs its own SMA, scaled around 100
+    # RS-Ratio: ratio vs its own SMA, scaled to 100
+    # สูตรดั้งเดิม: (RS / SMA(RS)) × 100
     rs_sma = rs.rolling(window=rs_period).mean()
-    rs_ratio = CENTER + ((rs - rs_sma) / rs_sma) * CENTER
+    rs_ratio = (rs / rs_sma) * CENTER
 
-    # RS-Momentum: ratio of RS-Ratio vs its own SMA, scaled around 100
+    # RS-Momentum: ratio of RS-Ratio vs its own SMA, scaled to 100
+    # สูตรดั้งเดิม: (RS-Ratio / SMA(RS-Ratio)) × 100
     ratio_sma = rs_ratio.rolling(window=mom_period).mean()
-    rs_momentum = CENTER + ((rs_ratio - ratio_sma) / ratio_sma) * CENTER
+    rs_momentum = (rs_ratio / ratio_sma) * CENTER
 
     result = pd.DataFrame({
         "rs_ratio": rs_ratio,
@@ -153,7 +156,7 @@ ax.text(xhi - offset, ylo + offset, "WEAKENING",   ha="right", va="bottom", font
 
 # Latest date for the title
 latest_date = max(rrg.index[-1] for rrg in sectors.values())
-ax.set_title(f"Relative Rotation Graph — SET Sectors\n(weekly, as of {latest_date.strftime('%Y-%m-%d')})",
+ax.set_title(f"Relative Rotation Graph — SET Sectors (Original RRG Formula)\n(weekly, as of {latest_date.strftime('%Y-%m-%d')})",
              fontsize=14, fontweight="bold")
 ax.set_xlabel("RS-Ratio →", fontsize=12)
 ax.set_ylabel("RS-Momentum →", fontsize=12)
