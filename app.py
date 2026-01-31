@@ -8,7 +8,12 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Use the script's real directory; fall back to cwd if __file__ is unreliable
+_script_dir = os.path.dirname(os.path.realpath(__file__))
+if os.path.isdir(os.path.join(_script_dir, "data")):
+    BASE_DIR = _script_dir
+else:
+    BASE_DIR = os.getcwd()
 
 RS_RATIO_PERIOD = 12
 RS_MOMENTUM_PERIOD = 10
@@ -208,7 +213,8 @@ with st.sidebar:
     sectors = load_all_sectors(interval_key)
 
     if not sectors:
-        st.error("No sector data found for this interval. Make sure CSV files are present.")
+        data_path = os.path.join(BASE_DIR, "data", "daily" if interval_key == "daily" else "1h")
+        st.error(f"No sector data found for this interval. Looking in: `{data_path}`")
         st.stop()
 
     tail_unit = "weeks" if interval_key == "daily" else "hours"
