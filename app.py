@@ -8,44 +8,65 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-# Use the script's real directory; fall back to cwd if __file__ is unreliable
 _script_dir = os.path.dirname(os.path.realpath(__file__))
 if os.path.isdir(os.path.join(_script_dir, "data")):
     BASE_DIR = _script_dir
 else:
     BASE_DIR = os.getcwd()
 
-RS_RATIO_PERIOD = 12
-RS_MOMENTUM_PERIOD = 10
 CENTER = 100
 
+# Default periods per interval
+DEFAULT_PERIODS = {
+    "weekly": {"rs_period": 10, "mom_period": 10, "tail_length": 5},
+    "daily": {"rs_period": 14, "mom_period": 10, "tail_length": 10},
+    "1h": {"rs_period": 24, "mom_period": 12, "tail_length": 20},
+}
+
 # ---------------------------------------------------------------------------
-# RRG computation (reused from generate_graph.py)
+# RRG computation (JdK style with ema_alpha / Wilder's smoothing)
 # ---------------------------------------------------------------------------
 
 def load_csv(path: str, interval: str = "daily") -> pd.Series:
     """Load a sector CSV and return close prices.
 
-    For daily data: resample to weekly (W-FRI) as before.
-    For 1h data: return raw hourly close without resampling.
+    For weekly: resample daily to weekly (W-FRI) - ต้นตำรับ
+    For daily: no resample (use raw daily)
+    For 1h: no resample (use raw hourly)
     """
     df = pd.read_csv(path, parse_dates=["datetime"])
     df = df.sort_values("datetime").set_index("datetime")
-    if interval == "daily":
+    
+    if interval == "weekly":
         return df["close"].resample("W-FRI").last().dropna()
     else:
         return df["close"].dropna()
 
 
+def ema_alpha(series: pd.Series, period: int) -> pd.Series:
+    """Wilder's smoothing (RMA) - ต้นตำรับ JdK RRG"""
+    return series.ewm(alpha=1/period, adjust=False).mean()
+
+
 def compute_rrg(sector_close: pd.Series,
                 benchmark_close: pd.Series,
-                rs_period: int = RS_RATIO_PERIOD,
-                mom_period: int = RS_MOMENTUM_PERIOD) -> pd.DataFrame:
+                rs_period: int,
+                mom_period: int) -> pd.DataFrame:
+    """
+    Compute RS-Ratio and RS-Momentum using JdK methodology.
+    ใช้ ema_alpha (Wilder's smoothing) ตามต้นตำรับ
+    """
+    # Raw relative strength
     rs = sector_close / benchmark_close
-    rs_sma = rs.rolling(window=rs_period).mean()
-    rs_ratio = CENTER + ((rs - rs_sma) / rs_sma) * CENTER
-    ratio_sma = rs_ratio.rolling(window=mom_period).mean()
-    rs_momentum = CENTER + ((rs_ratio - ratio_sma) / ratio_sma) * CENTER
+    
+    # RS-Ratio: ใช้ ema_alpha
+    rs_smooth = ema_alpha(rs, rs_period)
+    rs_ratio = CENTER + ((rs - rs_smooth) / rs_smooth) * CENTER
+    
+    # RS-Momentum: ใช้ ema_alpha
+    ratio_smooth = ema_alpha(rs_ratio, mom_period)
+    rs_momentum = CENTER + ((rs_ratio - ratio_smooth) / ratio_smooth) * CENTER
+
     result = pd.DataFrame({"rs_ratio": rs_ratio, "rs_momentum": rs_momentum})
     return result.dropna()
 
@@ -55,9 +76,13 @@ def compute_rrg(sector_close: pd.Series,
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=3600)
-def load_all_sectors(interval: str = "daily"):
+def load_all_sectors(interval: str, rs_period: int, mom_period: int):
     """Load benchmark and all sector RRG data. Returns (dict, error_msg|None)."""
-    data_dir = os.path.join(BASE_DIR, "data", "daily" if interval == "daily" else "1h")
+    # Weekly และ Daily ใช้ data จาก folder "daily"
+    if interval in ["weekly", "daily"]:
+        data_dir = os.path.join(BASE_DIR, "data", "daily")
+    else:
+        data_dir = os.path.join(BASE_DIR, "data", "1h")
     benchmark_file = os.path.join(data_dir, "SET.csv")
 
     if not os.path.isfile(benchmark_file):
@@ -73,7 +98,7 @@ def load_all_sectors(interval: str = "daily"):
 
     sectors = {}
     errors = []
-    min_rows = RS_RATIO_PERIOD + RS_MOMENTUM_PERIOD + 5
+    min_rows = rs_period + mom_period + 10
     for fpath in sector_files:
         name = os.path.splitext(os.path.basename(fpath))[0]
         try:
@@ -81,7 +106,7 @@ def load_all_sectors(interval: str = "daily"):
             common = close.index.intersection(benchmark.index)
             if len(common) < min_rows:
                 continue
-            rrg = compute_rrg(close.loc[common], benchmark.loc[common])
+            rrg = compute_rrg(close.loc[common], benchmark.loc[common], rs_period, mom_period)
             if len(rrg) >= 5:
                 sectors[name] = rrg
         except Exception as e:
@@ -97,7 +122,6 @@ def load_all_sectors(interval: str = "daily"):
 # Plotly chart
 # ---------------------------------------------------------------------------
 
-# 20 distinct colours for sector tails
 COLORS = [
     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
@@ -112,7 +136,7 @@ def build_figure(sectors: dict, selected: list[str], tail_length: int,
 
     color_map = {name: COLORS[i % len(COLORS)] for i, name in enumerate(sorted(sectors.keys()))}
 
-    date_fmt = "%Y-%m-%d" if interval == "daily" else "%Y-%m-%d %H:%M"
+    date_fmt = "%Y-%m-%d %H:%M" if interval == "1h" else "%Y-%m-%d"
 
     all_x, all_y = [], []
 
@@ -208,31 +232,76 @@ def build_figure(sectors: dict, selected: list[str], tail_length: int,
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="RRG — SET Sectors", layout="wide")
-st.title("Relative Rotation Graph — SET Sectors")
+st.set_page_config(page_title="RRG – SET Sectors", layout="wide")
+st.title("Relative Rotation Graph – SET Sectors")
 
 # Sidebar controls
 with st.sidebar:
     st.header("Settings")
 
-    interval = st.radio("Interval", options=["Daily", "1 Hour"], horizontal=True)
-    interval_key = "daily" if interval == "Daily" else "1h"
-
-    sectors, load_error = load_all_sectors(interval_key)
+    # Interval selection
+    interval = st.radio("Interval", options=["Weekly", "Daily", "1 Hour"], horizontal=True)
+    interval_key = {"Weekly": "weekly", "Daily": "daily", "1 Hour": "1h"}[interval]
+    
+    # Get default periods for selected interval
+    defaults = DEFAULT_PERIODS[interval_key]
+    
+    st.subheader("Parameters")
+    
+    # RS-Ratio Period
+    rs_period = st.slider(
+        "RS-Ratio Period", 
+        min_value=5, 
+        max_value=50, 
+        value=defaults["rs_period"],
+        help="Period for RS-Ratio smoothing (ema_alpha)"
+    )
+    
+    # RS-Momentum Period
+    mom_period = st.slider(
+        "RS-Momentum Period", 
+        min_value=5, 
+        max_value=50, 
+        value=defaults["mom_period"],
+        help="Period for RS-Momentum smoothing (ema_alpha)"
+    )
+    
+    # Tail length
+    tail_units = {"weekly": "weeks", "daily": "days", "1h": "hours"}
+    tail_unit = tail_units[interval_key]
+    tail_length = st.slider(
+        f"Tail length ({tail_unit})", 
+        min_value=2, 
+        max_value=50, 
+        value=defaults["tail_length"]
+    )
+    
+    st.divider()
+    
+    # Load data with selected parameters
+    sectors, load_error = load_all_sectors(interval_key, rs_period, mom_period)
 
     if not sectors:
-        st.error(f"No sector data found for this interval.\n\n{load_error or 'Unknown error'}")
+        st.error(f"No sector data found.\n\n{load_error or 'Unknown error'}")
         st.stop()
 
-    tail_unit = "weeks" if interval_key == "daily" else "hours"
-    tail_length = st.slider(f"Tail length ({tail_unit})", min_value=2, max_value=20, value=5)
-
+    # Sector selection
     all_names = sorted(sectors.keys())
     selected = st.multiselect("Sectors", options=all_names, default=all_names)
 
+    st.divider()
+    
+    # Info box
+    st.info(f"""
+    **Smoothing:** ema_alpha (Wilder's RMA)  
+    **Formula:** `ewm(alpha=1/period)`  
+    **RS Period:** {rs_period}  
+    **Mom Period:** {mom_period}
+    """)
+
     # Last-updated date
     latest_date = max(rrg.index[-1] for rrg in sectors.values())
-    date_fmt = "%Y-%m-%d" if interval_key == "daily" else "%Y-%m-%d %H:%M"
+    date_fmt = "%Y-%m-%d %H:%M" if interval_key == "1h" else "%Y-%m-%d"
     st.markdown(f"**Data as of:** {latest_date.strftime(date_fmt)}")
 
 if not selected:
@@ -240,4 +309,4 @@ if not selected:
     st.stop()
 
 fig = build_figure(sectors, selected, tail_length, interval_key)
-st.plotly_chart(fig, width="stretch")
+st.plotly_chart(fig, use_container_width=True)
