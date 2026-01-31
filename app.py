@@ -8,8 +8,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
-BENCHMARK_FILE = os.path.join(DATA_DIR, "SET.csv")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 RS_RATIO_PERIOD = 12
 RS_MOMENTUM_PERIOD = 10
@@ -19,12 +18,18 @@ CENTER = 100
 # RRG computation (reused from generate_graph.py)
 # ---------------------------------------------------------------------------
 
-def load_csv(path: str) -> pd.Series:
-    """Load a sector CSV, parse dates, and return weekly close prices."""
+def load_csv(path: str, interval: str = "daily") -> pd.Series:
+    """Load a sector CSV and return close prices.
+
+    For daily data: resample to weekly (W-FRI) as before.
+    For 1h data: return raw hourly close without resampling.
+    """
     df = pd.read_csv(path, parse_dates=["datetime"])
     df = df.sort_values("datetime").set_index("datetime")
-    weekly = df["close"].resample("W-FRI").last().dropna()
-    return weekly
+    if interval == "daily":
+        return df["close"].resample("W-FRI").last().dropna()
+    else:
+        return df["close"].dropna()
 
 
 def compute_rrg(sector_close: pd.Series,
@@ -45,11 +50,17 @@ def compute_rrg(sector_close: pd.Series,
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=3600)
-def load_all_sectors():
+def load_all_sectors(interval: str = "daily"):
     """Load benchmark and all sector RRG data. Returns dict of DataFrames."""
-    benchmark = load_csv(BENCHMARK_FILE)
+    data_dir = os.path.join(BASE_DIR, "data", "daily" if interval == "daily" else "1h")
+    benchmark_file = os.path.join(data_dir, "SET.csv")
 
-    sector_files = sorted(glob.glob(os.path.join(DATA_DIR, "*.csv")))
+    if not os.path.isfile(benchmark_file):
+        return {}
+
+    benchmark = load_csv(benchmark_file, interval)
+
+    sector_files = sorted(glob.glob(os.path.join(data_dir, "*.csv")))
     sector_files = [f for f in sector_files if os.path.basename(f) != "SET.csv"]
 
     sectors = {}
@@ -57,7 +68,7 @@ def load_all_sectors():
     for fpath in sector_files:
         name = os.path.splitext(os.path.basename(fpath))[0]
         try:
-            close = load_csv(fpath)
+            close = load_csv(fpath, interval)
             common = close.index.intersection(benchmark.index)
             if len(common) < min_rows:
                 continue
@@ -82,10 +93,13 @@ COLORS = [
 ]
 
 
-def build_figure(sectors: dict, selected: list[str], tail_length: int) -> go.Figure:
+def build_figure(sectors: dict, selected: list[str], tail_length: int,
+                 interval: str = "daily") -> go.Figure:
     fig = go.Figure()
 
     color_map = {name: COLORS[i % len(COLORS)] for i, name in enumerate(sorted(sectors.keys()))}
+
+    date_fmt = "%Y-%m-%d" if interval == "daily" else "%Y-%m-%d %H:%M"
 
     all_x, all_y = [], []
 
@@ -97,7 +111,7 @@ def build_figure(sectors: dict, selected: list[str], tail_length: int) -> go.Fig
         all_x.extend(x)
         all_y.extend(y)
         c = color_map[name]
-        dates = tail.index.strftime("%Y-%m-%d").tolist()
+        dates = tail.index.strftime(date_fmt).tolist()
 
         # Tail line
         fig.add_trace(go.Scatter(
@@ -184,28 +198,33 @@ def build_figure(sectors: dict, selected: list[str], tail_length: int) -> go.Fig
 st.set_page_config(page_title="RRG — SET Sectors", layout="wide")
 st.title("Relative Rotation Graph — SET Sectors")
 
-sectors = load_all_sectors()
-
-if not sectors:
-    st.error("No sector data found. Make sure CSV files are present in the project directory.")
-    st.stop()
-
 # Sidebar controls
 with st.sidebar:
     st.header("Settings")
 
-    tail_length = st.slider("Tail length (weeks)", min_value=2, max_value=20, value=5)
+    interval = st.radio("Interval", options=["Daily", "1 Hour"], horizontal=True)
+    interval_key = "daily" if interval == "Daily" else "1h"
+
+    sectors = load_all_sectors(interval_key)
+
+    if not sectors:
+        st.error("No sector data found for this interval. Make sure CSV files are present.")
+        st.stop()
+
+    tail_unit = "weeks" if interval_key == "daily" else "hours"
+    tail_length = st.slider(f"Tail length ({tail_unit})", min_value=2, max_value=20, value=5)
 
     all_names = sorted(sectors.keys())
     selected = st.multiselect("Sectors", options=all_names, default=all_names)
 
     # Last-updated date
     latest_date = max(rrg.index[-1] for rrg in sectors.values())
-    st.markdown(f"**Data as of:** {latest_date.strftime('%Y-%m-%d')}")
+    date_fmt = "%Y-%m-%d" if interval_key == "daily" else "%Y-%m-%d %H:%M"
+    st.markdown(f"**Data as of:** {latest_date.strftime(date_fmt)}")
 
 if not selected:
     st.warning("Select at least one sector from the sidebar.")
     st.stop()
 
-fig = build_figure(sectors, selected, tail_length)
+fig = build_figure(sectors, selected, tail_length, interval_key)
 st.plotly_chart(fig, width="stretch")
