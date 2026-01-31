@@ -89,20 +89,20 @@ def fetch_with_retry(symbol, exchange='SET', interval=Interval.in_daily, n_bars=
 
             # Check if data is valid
             if stock_data is not None and not stock_data.empty:
-                print(f"✓ Successfully fetched {symbol} - {len(stock_data)} rows")
+                print(f"[OK] Successfully fetched {symbol} - {len(stock_data)} rows")
                 return stock_data
             else:
-                print(f"✗ No data returned for {symbol}")
+                print(f"[FAIL] No data returned for {symbol}")
 
         except Exception as e:
-            print(f"✗ Error fetching {symbol}: {str(e)}")
+            print(f"[FAIL] Error fetching {symbol}: {str(e)}")
 
         # Wait before retry (except for the last attempt)
         if attempt < max_retries - 1:
             print(f"Waiting {wait_time} seconds before retry...")
             time.sleep(wait_time)
 
-    print(f"⚠ Failed to fetch {symbol} after {max_retries} attempts")
+    print(f"[WARN] Failed to fetch {symbol} after {max_retries} attempts")
     return None
 
 
@@ -133,10 +133,10 @@ def main():
             try:
                 filepath = os.path.join(out_dir, f'{symbol}.csv')
                 stock_data.to_csv(filepath)
-                print(f"✓ Saved to {filepath}")
+                print(f"[OK] Saved to {filepath}")
                 successful_symbols.append(symbol)
             except Exception as e:
-                print(f"✗ Error saving {symbol}: {str(e)}")
+                print(f"[FAIL] Error saving {symbol}: {str(e)}")
                 failed_symbols.append(symbol)
         else:
             failed_symbols.append(symbol)
