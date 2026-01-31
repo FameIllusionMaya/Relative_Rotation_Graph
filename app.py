@@ -56,19 +56,23 @@ def compute_rrg(sector_close: pd.Series,
 
 @st.cache_data(ttl=3600)
 def load_all_sectors(interval: str = "daily"):
-    """Load benchmark and all sector RRG data. Returns dict of DataFrames."""
+    """Load benchmark and all sector RRG data. Returns (dict, error_msg|None)."""
     data_dir = os.path.join(BASE_DIR, "data", "daily" if interval == "daily" else "1h")
     benchmark_file = os.path.join(data_dir, "SET.csv")
 
     if not os.path.isfile(benchmark_file):
-        return {}
+        return {}, f"Benchmark file not found: {benchmark_file}"
 
-    benchmark = load_csv(benchmark_file, interval)
+    try:
+        benchmark = load_csv(benchmark_file, interval)
+    except Exception as e:
+        return {}, f"Error loading benchmark: {e}"
 
     sector_files = sorted(glob.glob(os.path.join(data_dir, "*.csv")))
     sector_files = [f for f in sector_files if os.path.basename(f) != "SET.csv"]
 
     sectors = {}
+    errors = []
     min_rows = RS_RATIO_PERIOD + RS_MOMENTUM_PERIOD + 5
     for fpath in sector_files:
         name = os.path.splitext(os.path.basename(fpath))[0]
@@ -80,9 +84,13 @@ def load_all_sectors(interval: str = "daily"):
             rrg = compute_rrg(close.loc[common], benchmark.loc[common])
             if len(rrg) >= 5:
                 sectors[name] = rrg
-        except Exception:
+        except Exception as e:
+            errors.append(f"{name}: {e}")
             continue
-    return sectors
+
+    if not sectors and errors:
+        return {}, f"All sectors failed. First errors: {errors[:3]}"
+    return sectors, None
 
 
 # ---------------------------------------------------------------------------
@@ -210,19 +218,10 @@ with st.sidebar:
     interval = st.radio("Interval", options=["Daily", "1 Hour"], horizontal=True)
     interval_key = "daily" if interval == "Daily" else "1h"
 
-    sectors = load_all_sectors(interval_key)
+    sectors, load_error = load_all_sectors(interval_key)
 
     if not sectors:
-        data_path = os.path.join(BASE_DIR, "data", "daily" if interval_key == "daily" else "1h")
-        bench = os.path.join(data_path, "SET.csv")
-        st.error(
-            f"No sector data found for this interval.\n\n"
-            f"- `BASE_DIR`: `{BASE_DIR}`\n"
-            f"- `data_path`: `{data_path}`\n"
-            f"- dir exists: `{os.path.isdir(data_path)}`\n"
-            f"- SET.csv exists: `{os.path.isfile(bench)}`\n"
-            f"- files: `{os.listdir(data_path) if os.path.isdir(data_path) else 'N/A'}`"
-        )
+        st.error(f"No sector data found for this interval.\n\n{load_error or 'Unknown error'}")
         st.stop()
 
     tail_unit = "weeks" if interval_key == "daily" else "hours"
