@@ -214,7 +214,15 @@ with st.sidebar:
 
     if not sectors:
         data_path = os.path.join(BASE_DIR, "data", "daily" if interval_key == "daily" else "1h")
-        st.error(f"No sector data found for this interval. Looking in: `{data_path}`")
+        bench = os.path.join(data_path, "SET.csv")
+        st.error(
+            f"No sector data found for this interval.\n\n"
+            f"- `BASE_DIR`: `{BASE_DIR}`\n"
+            f"- `data_path`: `{data_path}`\n"
+            f"- dir exists: `{os.path.isdir(data_path)}`\n"
+            f"- SET.csv exists: `{os.path.isfile(bench)}`\n"
+            f"- files: `{os.listdir(data_path) if os.path.isdir(data_path) else 'N/A'}`"
+        )
         st.stop()
 
     tail_unit = "weeks" if interval_key == "daily" else "hours"
