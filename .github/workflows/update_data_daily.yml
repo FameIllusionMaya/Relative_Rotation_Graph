@@ -1,0 +1,37 @@
+name: Update daily sector data
+
+on:
+  schedule:
+    # Daily: 10:30 UTC = 17:30 ICT (after SET market close at 16:30 ICT)
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  update-daily:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install tvDatafeed==2.1.1
+
+      - name: Fetch daily sector data
+        run: python fetch_sector_data.py --interval daily
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/daily/
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "data: update daily sector CSVs ($(date -u +%Y-%m-%d))"
+          git push
