@@ -9,8 +9,11 @@ matplotlib.use("Agg")  # non-interactive backend for saving without GUI
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+# DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+# BENCHMARK_FILE = os.path.join(DATA_DIR, "SET.csv")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "daily")
 BENCHMARK_FILE = os.path.join(DATA_DIR, "SET.csv")
+
 
 RS_RATIO_PERIOD = 12       # lookback for RS-Ratio normalisation
 RS_MOMENTUM_PERIOD = 10    # lookback for RS-Momentum normalisation
@@ -165,3 +168,4 @@ output_path = os.path.join(DATA_DIR, "rrg_output.png")
 plt.savefig(output_path, dpi=150)
 print(f"Saved: {output_path}")
 print("Done.")
+

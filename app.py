@@ -18,9 +18,9 @@ CENTER = 100
 
 # Default periods per interval
 DEFAULT_PERIODS = {
-    "weekly": {"rs_period": 10, "mom_period": 10, "tail_length": 5},
-    "daily": {"rs_period": 14, "mom_period": 10, "tail_length": 10},
-    "1h": {"rs_period": 24, "mom_period": 12, "tail_length": 20},
+    "weekly": {"rs_period": 8, "mom_period": 8, "tail_length": 5},
+    "daily": {"rs_period": 10, "mom_period": 10, "tail_length": 10},
+    "1h": {"rs_period": 10, "mom_period": 10, "tail_length": 20},
 }
 
 # ---------------------------------------------------------------------------
