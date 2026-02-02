@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install tvDatafeed==2.1.1
+        run: pip install tradingview-datafeed==2.1.1
 
       - name: Fetch 1h sector data
         run: python fetch_sector_data.py --interval 1h
