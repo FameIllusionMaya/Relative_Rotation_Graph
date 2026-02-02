@@ -144,6 +144,39 @@ def main():
         # Small delay between symbols to avoid rate limiting
         time.sleep(2)
 
+    # Retry failed symbols one more time
+    if failed_symbols:
+        print(f"\n{'='*60}")
+        print("RETRYING FAILED SYMBOLS")
+        print(f"{'='*60}")
+        print(f"Retrying {len(failed_symbols)} failed symbols: {', '.join(failed_symbols)}")
+
+        retry_failed = []
+
+        for symbol in failed_symbols[:]:  # Create a copy to iterate
+            print(f"\n{'='*60}")
+            print(f"Retrying: {symbol}  (interval={args.interval})")
+            print(f"{'='*60}")
+
+            stock_data = fetch_with_retry(symbol, interval=tv_interval, n_bars=n_bars,
+                                          wait_time=20, max_retries=3)
+
+            if stock_data is not None:
+                try:
+                    filepath = os.path.join(out_dir, f'{symbol}.csv')
+                    stock_data.to_csv(filepath)
+                    print(f"[OK] Saved to {filepath}")
+                    successful_symbols.append(symbol)
+                    failed_symbols.remove(symbol)
+                except Exception as e:
+                    print(f"[FAIL] Error saving {symbol}: {str(e)}")
+                    retry_failed.append(symbol)
+            else:
+                retry_failed.append(symbol)
+
+            # Small delay between symbols to avoid rate limiting
+            time.sleep(2)
+
     # Summary
     print(f"\n{'='*60}")
     print("SUMMARY")

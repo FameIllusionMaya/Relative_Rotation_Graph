@@ -58,7 +58,7 @@ def compute_rrg(sector_close: pd.Series,
     """
     # Raw relative strength
     rs = sector_close / benchmark_close
-    
+
     # RS-Ratio: ใช้ ema_alpha
     rs_smooth = ema_alpha(rs, rs_period)
     rs_ratio = CENTER + ((rs - rs_smooth) / rs_smooth) * CENTER
