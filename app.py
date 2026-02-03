@@ -1,3 +1,11 @@
+"""
+TODO
+- default just main sector
+- fix date
+- rrg of US stock
+"""
+
+
 import os
 import glob
 import pandas as pd
@@ -16,6 +24,12 @@ else:
 
 CENTER = 100
 
+# Main sectors to show by default (reduced list for better initial view)
+MAIN_SECTORS = [
+    "AGRO", "CONSUMP", "FINCIAL", "INDUS",
+    "PROPCON", "RESOURC", "SERVICE", "TECH"
+]
+
 # Default periods per interval
 DEFAULT_PERIODS = {
     "weekly": {"rs_period": 8, "mom_period": 8, "tail_length": 5},
@@ -32,11 +46,15 @@ def load_csv(path: str, interval: str = "daily") -> pd.Series:
 
     For weekly: resample daily to weekly (W-FRI) - ต้นตำรับ
     For daily: no resample (use raw daily)
-    For 1h: no resample (use raw hourly)
+    For 1h: no resample (use raw hourly) + add 7 hours for Thailand timezone
     """
     df = pd.read_csv(path, parse_dates=["datetime"])
     df = df.sort_values("datetime").set_index("datetime")
-    
+
+    # Fix timezone for 1h data (Thailand is UTC+7)
+    if interval == "1h":
+        df.index = df.index + pd.Timedelta(hours=7)
+
     if interval == "weekly":
         return df["close"].resample("W-FRI").last().dropna()
     else:
@@ -235,6 +253,10 @@ def build_figure(sectors: dict, selected: list[str], tail_length: int,
 st.set_page_config(page_title="RRG – SET Sectors", layout="wide")
 st.title("Relative Rotation Graph – SET Sectors")
 
+# Initialize session state for selected sectors
+if "selected_sectors" not in st.session_state:
+    st.session_state.selected_sectors = None
+
 # Sidebar controls
 with st.sidebar:
     st.header("Settings")
@@ -242,42 +264,42 @@ with st.sidebar:
     # Interval selection
     interval = st.radio("Interval", options=["Weekly", "Daily", "1 Hour"], horizontal=True)
     interval_key = {"Weekly": "weekly", "Daily": "daily", "1 Hour": "1h"}[interval]
-    
+
     # Get default periods for selected interval
     defaults = DEFAULT_PERIODS[interval_key]
-    
+
     st.subheader("Parameters")
-    
+
     # RS-Ratio Period
     rs_period = st.slider(
-        "RS-Ratio Period", 
-        min_value=5, 
-        max_value=50, 
+        "RS-Ratio Period",
+        min_value=5,
+        max_value=50,
         value=defaults["rs_period"],
         help="Period for RS-Ratio smoothing (ema_alpha)"
     )
-    
+
     # RS-Momentum Period
     mom_period = st.slider(
-        "RS-Momentum Period", 
-        min_value=5, 
-        max_value=50, 
+        "RS-Momentum Period",
+        min_value=5,
+        max_value=50,
         value=defaults["mom_period"],
         help="Period for RS-Momentum smoothing (ema_alpha)"
     )
-    
+
     # Tail length
     tail_units = {"weekly": "weeks", "daily": "days", "1h": "hours"}
     tail_unit = tail_units[interval_key]
     tail_length = st.slider(
-        f"Tail length ({tail_unit})", 
-        min_value=2, 
-        max_value=50, 
+        f"Tail length ({tail_unit})",
+        min_value=2,
+        max_value=50,
         value=defaults["tail_length"]
     )
-    
+
     st.divider()
-    
+
     # Load data with selected parameters
     sectors, load_error = load_all_sectors(interval_key, rs_period, mom_period)
 
@@ -285,9 +307,28 @@ with st.sidebar:
         st.error(f"No sector data found.\n\n{load_error or 'Unknown error'}")
         st.stop()
 
-    # Sector selection
+    # Sector selection with persistent state
     all_names = sorted(sectors.keys())
-    selected = st.multiselect("Sectors", options=all_names, default=all_names)
+
+    # Determine default selection
+    if st.session_state.selected_sectors is None:
+        # First time: use main sectors (or all if main sectors not available)
+        default_selection = [s for s in MAIN_SECTORS if s in all_names]
+        if not default_selection:
+            default_selection = all_names
+    else:
+        # Keep previous selection, but filter to only available sectors
+        default_selection = [s for s in st.session_state.selected_sectors if s in all_names]
+        if not default_selection:
+            # If none of previous selection available, fallback to main sectors
+            default_selection = [s for s in MAIN_SECTORS if s in all_names]
+            if not default_selection:
+                default_selection = all_names
+
+    selected = st.multiselect("Sectors", options=all_names, default=default_selection)
+
+    # Update session state with current selection
+    st.session_state.selected_sectors = selected
 
     st.divider()
     
