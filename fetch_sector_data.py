@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime
 
+import pandas as pd
 from tvDatafeed import TvDatafeed, Interval
 
 tv = TvDatafeed()
@@ -131,6 +132,10 @@ def main():
 
         if stock_data is not None:
             try:
+                # Fix timezone for 1h data (Thailand is UTC+7)
+                if args.interval == "1h":
+                    stock_data.index = stock_data.index + pd.Timedelta(hours=7)
+
                 filepath = os.path.join(out_dir, f'{symbol}.csv')
                 stock_data.to_csv(filepath)
                 print(f"[OK] Saved to {filepath}")
@@ -163,6 +168,10 @@ def main():
 
             if stock_data is not None:
                 try:
+                    # Fix timezone for 1h data (Thailand is UTC+7)
+                    if args.interval == "1h":
+                        stock_data.index = stock_data.index + pd.Timedelta(hours=7)
+
                     filepath = os.path.join(out_dir, f'{symbol}.csv')
                     stock_data.to_csv(filepath)
                     print(f"[OK] Saved to {filepath}")

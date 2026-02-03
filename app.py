@@ -46,14 +46,10 @@ def load_csv(path: str, interval: str = "daily") -> pd.Series:
 
     For weekly: resample daily to weekly (W-FRI) - ต้นตำรับ
     For daily: no resample (use raw daily)
-    For 1h: no resample (use raw hourly) + add 7 hours for Thailand timezone
+    For 1h: no resample (use raw hourly)
     """
     df = pd.read_csv(path, parse_dates=["datetime"])
     df = df.sort_values("datetime").set_index("datetime")
-
-    # Fix timezone for 1h data (Thailand is UTC+7)
-    if interval == "1h":
-        df.index = df.index + pd.Timedelta(hours=7)
 
     if interval == "weekly":
         return df["close"].resample("W-FRI").last().dropna()
