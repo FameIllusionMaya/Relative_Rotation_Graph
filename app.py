@@ -26,8 +26,8 @@ CENTER = 100
 
 # Main sectors to show by default (reduced list for better initial view)
 MAIN_SECTORS = [
-    "AGRI", "BANK", "CONS", "ETRON", "FOOD",
-    "FIN", "ICT", "INSUR", "PROP", "PETRO", "TRANS"
+    "AGRI", "BANK", "ETRON", "FOOD",
+    "FIN", "ICT", "PETRO"
 ]
 
 # Default periods per interval
