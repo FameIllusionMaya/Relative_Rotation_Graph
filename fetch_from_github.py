@@ -22,12 +22,17 @@ GITHUB_REPO = "FameIllusionMaya/Relative_Rotation_Graph"
 GITHUB_BRANCH = "master"
 BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
-# Sectors to download
+# Sectors to download (must match fetch_sector_data.py)
 SECTORS = [
-    "SET", "AGRI", "AUTO", "BANK", "COMM", "CONMAT", "CONSUMP", "ENERG",
-    "ETRON", "FIN", "FOOD", "HELTH", "HOME", "ICT", "IMM", "INDUS",
-    "INSUR", "MEDIA", "MINE", "PAPER", "PERSON", "PETRO", "PF&REIT",
-    "PKG", "PROF", "PROP", "STEEL", "TOURISM", "TRANS"
+    "SET",
+    "AGRI", "FOOD",                                    # เกษตรและอาหาร
+    "FASHION", "HOME", "PERSON",                       # สินค้าอุปโภคบริโภค
+    "BANK", "FIN", "INSUR",                            # การเงิน
+    "AUTO", "IMM", "PAPER", "PETRO", "PKG", "STEEL",   # อุตสาหกรรม
+    "CONMAT", "CONS", "PF_REIT", "PROP",               # อสังหาฯ
+    "ENERG",                                           # ทรัพยากร
+    "COMM", "HELTH", "MEDIA", "PROF", "TOURISM", "TRANS",  # บริการ
+    "ETRON", "ICT"                                     # เทคโนโลยี
 ]
 
 # Data directories
