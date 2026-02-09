@@ -13,10 +13,25 @@ import argparse
 import os
 import time
 import schedule
+import logging
 from datetime import datetime
 
 import pandas as pd
 from tvDatafeed import TvDatafeed, Interval
+
+# Setup logging
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(LOG_DIR, "data_fetch.log"), encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Initialize TradingView datafeed
 tv = TvDatafeed()
@@ -55,7 +70,10 @@ def fetch_with_retry(symbol, interval, n_bars, max_retries=3, wait_time=20):
             if stock_data is not None and not stock_data.empty:
                 return stock_data
         except Exception as e:
-            print(f"  [FAIL] {symbol}: {e}")
+            if attempt < max_retries - 1:
+                logger.warning(f"  [RETRY] {symbol} attempt {attempt + 1}/{max_retries}: {e}")
+            else:
+                logger.error(f"  [FAIL] {symbol}: {e}")
 
         if attempt < max_retries - 1:
             time.sleep(wait_time)
@@ -63,12 +81,30 @@ def fetch_with_retry(symbol, interval, n_bars, max_retries=3, wait_time=20):
     return None
 
 
+def verify_file(filepath):
+    """Verify that CSV file exists and has valid data."""
+    try:
+        if not os.path.exists(filepath):
+            return False, "File not found"
+
+        df = pd.read_csv(filepath)
+        if df.empty:
+            return False, "Empty file"
+
+        return True, f"{len(df)} rows"
+    except Exception as e:
+        return False, str(e)
+
+
 def fetch_data(interval_type="both"):
     """Fetch sector data from TradingView."""
-    print(f"\n{'='*60}")
-    print(f"  Fetching data from TradingView")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*60}\n")
+    start_time = datetime.now()
+
+    logger.info("=" * 60)
+    logger.info("  STARTING DATA FETCH")
+    logger.info(f"  Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"  Interval: {interval_type}")
+    logger.info("=" * 60)
 
     intervals_to_fetch = []
     if interval_type == "both":
@@ -76,14 +112,19 @@ def fetch_data(interval_type="both"):
     else:
         intervals_to_fetch = [interval_type]
 
-    results = {"success": 0, "failed": 0}
+    results = {
+        "success": 0,
+        "failed": 0,
+        "failed_symbols": [],
+        "success_symbols": []
+    }
 
     for int_type in intervals_to_fetch:
         cfg = INTERVAL_MAP[int_type]
         out_dir = os.path.join(DATA_DIR, cfg["subdir"])
         os.makedirs(out_dir, exist_ok=True)
 
-        print(f"Fetching {int_type} data...")
+        logger.info(f"\nFetching {int_type} data ({len(SECTORS)} sectors)...")
 
         for symbol in SECTORS:
             stock_data = fetch_with_retry(
@@ -100,31 +141,74 @@ def fetch_data(interval_type="both"):
 
                     filepath = os.path.join(out_dir, f'{symbol}.csv')
                     stock_data.to_csv(filepath)
-                    print(f"  [OK] {int_type}/{symbol}.csv")
-                    results["success"] += 1
+
+                    # Verify the saved file
+                    is_valid, msg = verify_file(filepath)
+                    if is_valid:
+                        logger.info(f"  [OK] {int_type}/{symbol}.csv - {msg}")
+                        results["success"] += 1
+                        results["success_symbols"].append(f"{int_type}/{symbol}")
+                    else:
+                        logger.error(f"  [FAIL] {int_type}/{symbol}.csv - Verification failed: {msg}")
+                        results["failed"] += 1
+                        results["failed_symbols"].append(f"{int_type}/{symbol}")
+
                 except Exception as e:
-                    print(f"  [FAIL] {symbol}: {e}")
+                    logger.error(f"  [FAIL] {symbol}: {e}")
                     results["failed"] += 1
+                    results["failed_symbols"].append(f"{int_type}/{symbol}")
             else:
-                print(f"  [FAIL] {symbol}: No data")
+                logger.error(f"  [FAIL] {symbol}: No data returned from TradingView")
                 results["failed"] += 1
+                results["failed_symbols"].append(f"{int_type}/{symbol}")
 
             time.sleep(2)  # Rate limiting
 
-        print()
+    # Calculate duration
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
 
-    print(f"{'='*60}")
-    print(f"  Done: {results['success']} success, {results['failed']} failed")
-    print(f"{'='*60}\n")
+    # Determine status
+    total = results["success"] + results["failed"]
+    if results["failed"] == 0:
+        status = "SUCCESS"
+    elif results["success"] == 0:
+        status = "FAILED"
+    else:
+        status = "PARTIAL"
+
+    # Print summary
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info(f"  FETCH COMPLETED - {status}")
+    logger.info("=" * 60)
+    logger.info(f"  Status:    {status}")
+    logger.info(f"  Time:      {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"  Duration:  {duration:.1f} seconds")
+    logger.info(f"  Success:   {results['success']}/{total}")
+    logger.info(f"  Failed:    {results['failed']}/{total}")
+
+    if results["failed_symbols"]:
+        logger.warning(f"  Failed symbols: {', '.join(results['failed_symbols'])}")
+
+    logger.info("=" * 60)
+    logger.info("")
+
+    return status, results
 
 
 def run_scheduled():
     """Run on schedule during market hours."""
-    print("Starting scheduled data fetcher...")
-    print("Schedule:")
-    print("  - Hourly (1h data): 10:20, 11:20, 12:20, 14:20, 15:20, 16:20 (Mon-Fri)")
-    print("  - Daily data: 18:00 (Mon-Fri)")
-    print("\nPress Ctrl+C to stop\n")
+    logger.info("=" * 60)
+    logger.info("  STARTING SCHEDULED DATA FETCHER")
+    logger.info("=" * 60)
+    logger.info("Schedule:")
+    logger.info("  - Hourly (1h data): 10:20, 11:20, 12:20, 14:20, 15:20, 16:20 (Mon-Fri)")
+    logger.info("  - Daily data: 18:00 (Mon-Fri)")
+    logger.info("")
+    logger.info("Log file: logs/data_fetch.log")
+    logger.info("Press Ctrl+C to stop")
+    logger.info("")
 
     # Hourly updates during market hours (1h data only)
     schedule.every().monday.at("10:20").do(fetch_data, interval_type="1h")
@@ -170,8 +254,14 @@ def run_scheduled():
     schedule.every().friday.at("18:00").do(fetch_data, interval_type="daily")
 
     # Run loop
+    logger.info("Waiting for scheduled tasks...")
     while True:
         schedule.run_pending()
+        next_run = schedule.next_run()
+        if next_run:
+            time_until = (next_run - datetime.now()).total_seconds()
+            if time_until > 0 and time_until < 120:  # Show when less than 2 minutes
+                logger.info(f"Next fetch in {time_until:.0f} seconds...")
         time.sleep(60)
 
 
@@ -183,9 +273,19 @@ def main():
     args = parser.parse_args()
 
     if args.schedule:
-        run_scheduled()
+        try:
+            run_scheduled()
+        except KeyboardInterrupt:
+            logger.info("Scheduler stopped by user")
     else:
-        fetch_data(interval_type=args.interval)
+        status, results = fetch_data(interval_type=args.interval)
+        # Exit with error code if any failures
+        if status == "FAILED":
+            exit(1)
+        elif status == "PARTIAL":
+            exit(2)
+        else:
+            exit(0)
 
 
 if __name__ == "__main__":
